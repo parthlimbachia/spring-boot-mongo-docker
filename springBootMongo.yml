@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
       - name: springapp-mongo
-        image: parthlimbachia1985/spring-boot-mongo:v1
+        image: parthlimbachia1985/spring-boot-mongo:14
         resources:
           requests:
             memory: "512Mi"
