@@ -1,141 +1,117 @@
-kind: ConfigMap
-apiVersion: v1
-metadata:
-  name: springappconfigmap
-data:
-  username: springapp
-  password: mongodb@123
-
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: springappsecrets
-type: Opaque
-stringData:   # We can define multiple key value pairs.
-  password: devdb@123
-
----
-apiVersion: v1
-kind: PersistentVolume
-metadata:
-  name: pv-hostpath
-spec:
-  storageClassName: manual
-  capacity:
-    storage: 1Gi
-  accessModes:
-  - ReadWriteOnce
-  hostPath:
-    path: "/tmp/mongodata"
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: pvc-hostpath
-spec:
-  storageClassName: manual
-  accessModes:
-  - ReadWriteOnce
-  resources:
-    requests:
-      storage: 100Mi
-
----
-## Spring Boot App
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: springappdeployment
+  name: springapp
+  namespace: springboot
 spec:
-  replicas: 2
   selector:
     matchLabels:
       app: springapp
   template:
     metadata:
-      name: springapppod
       labels:
         app: springapp
     spec:
       containers:
-      - name: springappcontainer
-        image: dockerhandson/spring-boot-mongo
+      - name: springapp-mongo
+        image: parthlimbachia1985/spring-boot-mongo:v1
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
         ports:
         - containerPort: 8080
         env:
         - name: MONGO_DB_USERNAME
           valueFrom:
             configMapKeyRef:
-              name: springappconfigmap
+              name: cm-springboot
               key: username
+        - name: MONGO_DB_HOSTNAME
+          valueFrom:
+            configMapKeyRef:
+              name: cm-springboot
+              key: hostname
         - name: MONGO_DB_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: springappsecrets
+              name: secret-springboot
               key: password
-        - name: MONGO_DB_HOSTNAME
-          value: mongo
+
 ---
+
 apiVersion: v1
 kind: Service
 metadata:
-  name: springapp
+  name: springapp-svc
+  namespace: springboot
 spec:
+  type: NodePort
   selector:
     app: springapp
   ports:
   - port: 80
     targetPort: 8080
-  type: NodePort
+
 ---
-# Mongo db pod with volumes(HostPath)
 apiVersion: apps/v1
-kind: ReplicaSet
+kind: StatefulSet
 metadata:
-  name: mongodbrs
+  name: mongodb
+  namespace: springboot
 spec:
   selector:
     matchLabels:
       app: mongodb
+  serviceName: mongodb-svc
+  replicas: 1
   template:
-     metadata:
-       name: mongodbpod
-       labels:
-         app: mongodb
-     spec:
-       volumes:
-       - name: mongodb-pvc
-         persistentVolumeClaim:
-           claimName: pvc-hostpath
-       containers:
-       - name: mongodbcontainer
-         image: mongo
-         ports:
-         - containerPort: 27017
-         env:
-         - name: MONGO_INITDB_ROOT_USERNAME
-           valueFrom:
-             configMapKeyRef:
-               name: springappconfigmap
-               key: username
-         - name: MONGO_INITDB_ROOT_PASSWORD
-           valueFrom:
-             secretKeyRef:
-               name: springappsecrets
-               key: password
-         volumeMounts:
-         - name: mongodb-pvc
-           mountPath: /data/db
+    metadata:
+      labels:
+        app: mongodb
+    spec:
+      containers:
+      - name: mongodb
+        image: mongo:4.4.24
+        ports:
+        - containerPort: 27017
+        env:
+        - name: MONGO_INITDB_ROOT_USERNAME
+          valueFrom:
+            configMapKeyRef:
+              name: cm-springboot
+              key: username
+        - name: MONGO_INITDB_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: secret-springboot
+              key: password
+        volumeMounts:
+        - name: mongovol
+          mountPath: /data/db
+  volumeClaimTemplates:
+  - metadata:
+      name: mongovol
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 1Gi
+
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: mongo
+  name: mongodb-svc
+  namespace: springboot
 spec:
-  type: ClusterIP
+  clusterIP: None
   selector:
     app: mongodb
   ports:
   - port: 27017
     targetPort: 27017
+
